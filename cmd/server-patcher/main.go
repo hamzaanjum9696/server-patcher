@@ -65,6 +65,10 @@ func main() {
 		usage(1)
 	}
 
+	if !util.IsValidIP(options.IP) {
+		log.Fatal("Provided Argument for IP Address is not Valid")
+	}
+	
 	port, err := strconv.Atoi(os.Args[3])
 	if err != nil {
 		log.Fatal("Unable to parse arg for <port> as int")
@@ -80,14 +84,10 @@ func main() {
 
 	options.ServerType = util.DetermineServerType(options.IP, config.IpMappings)
 
-	if !util.IsValidIP(options.IP) {
-		log.Fatal("Provided Argument for IP Address is not Valid")
-	}
-
 	switch options.Command {
 	case "start":
 		switch options.ServerType {
-		case util.Web:
+		case util.WebApp:
 			panic("unimplemented")
 		case util.Backend:
 			panic("unimplemented")
@@ -109,7 +109,7 @@ func main() {
 		}
 	case "stop":
 		switch options.ServerType {
-		case util.Web:
+		case util.WebApp:
 			panic("unimplemented")
 		case util.Backend:
 			panic("unimplemented")
