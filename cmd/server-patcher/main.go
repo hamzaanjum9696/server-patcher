@@ -22,11 +22,29 @@ type Options struct {
 	ServerType util.ServerType
 }
 
+type CommandStep struct {
+	Command string   `yaml:"command"`
+	Args    []string `yaml:"args"`
+}
+
+type Application struct {
+	Name        string        `yaml:"name"`
+	IPRegex     string        `yaml:"ip_regex"`
+	StartSteps  []CommandStep `yaml:"start_steps"`
+	StopSteps   []CommandStep `yaml:"stop_steps"`
+	HealthCheck struct {
+		Command    string `yaml:"command"`
+		NumRetries int    `yaml:"num_retries"`
+		Timeout    string `yaml:"timeout"`
+	} `yaml:"health_check"`
+}
+
 type Configuration struct {
 	PatchNotifyEnabled bool              `yaml:"patch_notifications_enabled"`
 	IpMappings         map[string]string `yaml:"application_ip_mappings"`
 	PatchNotifyFrom    string            `yaml:"patch_notify_from_email"`
 	PatchNotifyTo      string            `yaml:"patch_notify_to_emails"`
+	Applications       []Application     `yaml:"applications"`
 }
 
 func usage(exitCode int) {
@@ -36,15 +54,14 @@ func usage(exitCode int) {
 
 func main() {
 
-	// Add support for config file
 	// deserialize into Configuration struct from a local config.yaml file
-	var config Configuration
 	configFile, err := os.Open("config.yaml")
 	if err != nil {
 		log.Fatal("Error opening config file:", err)
 	}
 	defer configFile.Close()
 
+	var config Configuration
 	decoder := yaml.NewDecoder(configFile)
 	err = decoder.Decode(&config)
 	if err != nil {
@@ -53,7 +70,7 @@ func main() {
 
 	log.Printf("Running with configuration: %#v\n", config)
 
-	if len(os.Args) < 2 {
+	if len(os.Args) < RequiredArgs {
 		usage(1)
 	}
 
@@ -61,14 +78,10 @@ func main() {
 		usage(0)
 	}
 
-	if len(os.Args) < RequiredArgs {
-		usage(1)
-	}
-
-	if !util.IsValidIP(options.IP) {
+	if !util.IsValidIP(os.Args[2]) {
 		log.Fatal("Provided Argument for IP Address is not Valid")
 	}
-	
+
 	port, err := strconv.Atoi(os.Args[3])
 	if err != nil {
 		log.Fatal("Unable to parse arg for <port> as int")
