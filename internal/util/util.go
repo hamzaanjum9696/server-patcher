@@ -15,9 +15,9 @@ import (
 type ServerType int
 
 const (
-	Web     ServerType = 0
-	Apache  ServerType = 1
-	Backend ServerType = 2
+	WebApp  ServerType = 0
+	Backend  ServerType = 1
+	Apache ServerType = 2
 	Unknown ServerType = 3
 )
 
@@ -132,12 +132,12 @@ func matchIPPattern(ip string, pattern string) bool {
 func DetermineServerType(ip_address string, ipMappings map[string]string) ServerType {
 
 	// define all possible patterns here
-	ipPatternWEBServers := ipMappings["web"]
-	ipPatternBEServers := ipMappings["backend"]
-	ipPatternApacheServers := ipMappings["apache"]
+	ipPatternWEBServers := ipMappings["WebApp"]
+	ipPatternBEServers := ipMappings["Backend"]
+	ipPatternApacheServers := ipMappings["Apache"]
 
 	if matchIPPattern(ip_address, ipPatternWEBServers) {
-		return Web
+		return WebApp
 	} else if matchIPPattern(ip_address, ipPatternBEServers) {
 		return Backend
 	} else if matchIPPattern(ip_address, ipPatternApacheServers) {
