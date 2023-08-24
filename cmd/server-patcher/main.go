@@ -1,12 +1,14 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"strconv"
+	"strings"
 
-	"github.com/hamzaanjum9696/server-patching/internal/prepare"
-	"github.com/hamzaanjum9696/server-patching/internal/start"
+	//"github.com/hamzaanjum9696/server-patching/internal/prepare"
+	//"github.com/hamzaanjum9696/server-patching/internal/start"
 	"github.com/hamzaanjum9696/server-patching/internal/util"
 	"gopkg.in/yaml.v2"
 )
@@ -23,8 +25,10 @@ type Options struct {
 }
 
 type CommandStep struct {
-	Command string   `yaml:"command"`
-	Args    []string `yaml:"args"`
+	Command        string   `yaml:"command"`
+	Args           []string `yaml:"args"`
+	CaptureOutput  bool     `yaml:"capture_output"`
+	OutputVariable string   `yaml:"output_variable"`
 }
 
 type Application struct {
@@ -43,7 +47,8 @@ type Configuration struct {
 	PatchNotifyEnabled bool              `yaml:"patch_notifications_enabled"`
 	IpMappings         map[string]string `yaml:"application_ip_mappings"`
 	PatchNotifyFrom    string            `yaml:"patch_notify_from_email"`
-	PatchNotifyTo      string            `yaml:"patch_notify_to_emails"`
+	PatchNotifyTo      []string          `yaml:"patch_notify_to_emails"`
+	PatchNotifyCC      []string          `yaml:"patch_notify_cc_emails"`
 	Applications       []Application     `yaml:"applications"`
 }
 
@@ -55,7 +60,7 @@ func usage(exitCode int) {
 func main() {
 
 	// deserialize into Configuration struct from a local config.yaml file
-	configFile, err := os.Open("config.yaml")
+	configFile, err := os.Open("../../config.yaml")
 	if err != nil {
 		log.Fatal("Error opening config file:", err)
 	}
@@ -99,73 +104,57 @@ func main() {
 
 	switch options.Command {
 	case "start":
-		switch options.ServerType {
-		case util.WebApp:
-			panic("unimplemented")
-		case util.Backend:
-			panic("unimplemented")
-		case util.Apache, util.Unknown:
-			apacheProcessNames, err := start.ReadSnapshotFromDir(options.IP, options.Port, options.Username, options.Password)
-			if err != nil {
-				log.Fatal(err)
-			}
+		for _, app := range config.Applications {
 
-			status := start.StartApacheProcesses(options.Password, options.Port, options.Username, options.Password, apacheProcessNames)
-			log.Printf("Status is: %t\n", status)
-
-			validationStatus := start.ValidateSnapshot(options.IP, options.Port, options.Username, options.Password, apacheProcessNames)
-			if validationStatus {
-				log.Println("All Server Present in Snapshot Started Successfully!!!")
-			} else {
-				log.Println("ALERT!!!All Server Present in Snapshot are not Started!!!ALERT")
+			for _, step := range app.StartSteps {
+				step.Command = strings.ReplaceAll(step.Command, "{{.IP}}", options.IP)
+				if step.CaptureOutput {
+					output, err := util.RunRemoteCommand(options.IP, options.Port, options.Username, options.Password, step.Command)
+					if err != nil {
+						log.Fatalf("Error executing command: %s\n", err)
+					}
+					step.OutputVariable = string(output)
+				} else {
+					_, err := util.RunRemoteCommand(options.IP, options.Port, options.Username, options.Password, step.Command)
+					if err != nil {
+						log.Fatalf("Error executing command: %s\n", err)
+					}
+				}
 			}
 		}
 	case "stop":
-		switch options.ServerType {
-		case util.WebApp:
-			panic("unimplemented")
-		case util.Backend:
-			panic("unimplemented")
-		case util.Apache, util.Unknown:
-			apacheProcessNames, err := prepare.GetApacheProcessNames(options.IP, options.Port, options.Username, options.Password)
-			if err != nil {
-				log.Fatal(err)
-			}
+		for _, app := range config.Applications {
+			fmt.Printf("Running stop steps for %s...\n", app.Name)
 
-			numberOfApachesRunning := len(apacheProcessNames)
-			log.Printf("Number of Apaches Running: %d\n", numberOfApachesRunning)
-			for i, apache := range apacheProcessNames {
-				log.Printf("Apache %d: %s\n", i+1, apache)
-			}
-
-			err = prepare.SaveSnapshotInDir(options.IP, options.Port, options.Username, options.Password, apacheProcessNames)
-			if err != nil {
-				log.Fatal(err)
-			}
-
-			if len(apacheProcessNames) > 0 {
-				log.Printf("Stopping Apache Servers for Node: %s\n", options.IP)
-				status := prepare.StopApacheProcesses(options.IP, options.Port, options.Username, options.Password, apacheProcessNames)
-				if !status {
-					log.Fatal("Apache Servers Could Not be Stopped Properly.")
+			// Execute stop steps
+			for _, step := range app.StopSteps {
+				step.Command = strings.ReplaceAll(step.Command, "{{.IP}}", options.IP)
+				if step.CaptureOutput {
+					output, err := util.RunRemoteCommand(options.IP, options.Port, options.Username, options.Password, step.Command)
+					if err != nil {
+						log.Fatalf("Error executing command: %s\n", err)
+					}
+					step.OutputVariable = string(output)
 				} else {
-					log.Printf("Apache Servers Stopped on Node: %s\n", options.IP)
+					fmt.Printf("No capture Command: %s\n", step.Command)
+					// Execute the command without capturing the output
+					_, err := util.RunRemoteCommand(options.IP, options.Port, options.Username, options.Password, step.Command)
+					if err != nil {
+						log.Fatalf("Error executing command: %s\n", err)
+					}
 				}
-			} else {
-				log.Printf("Nothing to Stop on Node: %s\n", options.IP)
 			}
-
-			// write function here to send snapshot email
-			// subject := "Snapshot: [ " + ip + " ]"
-			// err = util.SendSnapshotEmail(config.PatchNotifyFrom, config.PatchNotifyTo, subject, apacheProcessNames)
-			// if err != nil {
-			// 	log.Fatalf("Error:", err)
-			// 	return
-			// } else {
-			// 	log.Println("Email sent successfully!")
-			// }
-
 		}
+
+		// write function here to send snapshot email
+		// subject := "Snapshot: [ " + ip + " ]"
+		// err = util.SendSnapshotEmail(config.PatchNotifyFrom, config.PatchNotifyTo, subject, apacheProcessNames)
+		// if err != nil {
+		// 	log.Fatalf("Error:", err)
+		// 	return
+		// } else {
+		// 	log.Println("Email sent successfully!")
+		// }
 
 	}
 }
