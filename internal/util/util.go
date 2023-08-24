@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 
+	//"github.com/hamzaanjum9696/server-patching/cmd/server-patcher"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -16,8 +17,8 @@ type ServerType int
 
 const (
 	WebApp  ServerType = 0
-	Backend  ServerType = 1
-	Apache ServerType = 2
+	Backend ServerType = 1
+	Apache  ServerType = 2
 	Unknown ServerType = 3
 )
 
