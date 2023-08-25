@@ -9,17 +9,93 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/shirou/gopsutil/v3/process"
 	"golang.org/x/crypto/ssh"
 )
 
 type ServerType int
 
+type ProcessContext struct {
+	PID         int
+	ProcessName string
+	ProcessPath string
+	LaunchPath  string
+}
+
+type CommandStep struct {
+	Command string `yaml:"command"`
+}
+
+type Application struct {
+	Name          string        `yaml:"name"`
+	ProcessFilter string        `yaml:"process_filter"`
+	IPRegex       string        `yaml:"ip_regex"`
+	StartSteps    []CommandStep `yaml:"start_steps"`
+	StopSteps     []CommandStep `yaml:"stop_steps"`
+
+	// this one doesn't have a yaml key because its not from yaml,
+	// we are building it ourselves using process_filter from yaml
+	// still need to solve the uniqueness warning problem
+	// for now, we can just add a `are you sure? (y/n)` check and list
+	// all the processes. Then, user can read and confirm that they
+	// are starting/stopping the processes that they wanted to.
+	ProcessContext ProcessContext
+
+	HealthCheck struct {
+		Command    string `yaml:"command"`
+		NumRetries int    `yaml:"num_retries"`
+		Timeout    string `yaml:"timeout"`
+	} `yaml:"health_check"`
+}
+
 const (
 	WebApp  ServerType = 0
-	Backend  ServerType = 1
-	Apache ServerType = 2
+	Backend ServerType = 1
+	Apache  ServerType = 2
 	Unknown ServerType = 3
 )
+
+func BuildProcessContext(processFilter string) *ProcessContext {
+	// using the process filter, extract process name, process id, launch path, process path
+	// and return a ProcessContext struct
+	// example: processFilter = "httpd"
+	// output:
+	// ProcessContext{
+	// 	  PID: 1234,
+	// 	  ProcessName: "httpd",
+	// 	  ProcessPath: "/usr/sbin/httpd",
+	// 	  LaunchPath: "/u/apps/apache/bin"
+	// }
+
+	matches := findProcesses(processFilter)
+	log.Printf("Processes: %s\n", matches)
+	return nil
+
+}
+
+func findProcesses(processFilter string) []*process.Process {
+	processes, err := process.Pids()
+	matches := make([]*process.Process, 0)
+
+	if err != nil {
+		log.Fatalf("Error getting process ids: %s\n", err)
+	}
+
+	log.Printf("Found %d processes\n", len(processes))
+
+	for _, pid := range processes {
+		p, err := process.NewProcess(pid)
+		if err != nil {
+			continue
+		}
+		if pname, err := p.Name(); err == nil && strings.Contains(pname, processFilter) {
+			log.Printf("Found matching process %s with PID: %d\n", pname, pid)
+			matches = append(matches, p)
+		}
+	}
+
+	return matches
+}
 
 func SendEmail(notifyFromEmail string, notifyToEmails []string, ipAddress string, subject string, body []string) error {
 	bodyText := strings.Join(body, "\n")

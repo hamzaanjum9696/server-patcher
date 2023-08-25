@@ -13,38 +13,20 @@ import (
 
 const RequiredArgs int = 6
 
-type Options struct {
+type AutomationConfiguration struct {
+	PatchNotifyEnabled bool               `yaml:"patch_notifications_enabled"`
+	PatchNotifyFrom    string             `yaml:"patch_notify_from_email"`
+	PatchNotifyTo      string             `yaml:"patch_notify_to_emails"`
+	Applications       []util.Application `yaml:"applications"`
+}
+
+type CLIOptions struct {
 	Command    string
 	IP         string
 	Port       int
 	Username   string
 	Password   string
 	ServerType util.ServerType
-}
-
-type CommandStep struct {
-	Command string   `yaml:"command"`
-	Args    []string `yaml:"args"`
-}
-
-type Application struct {
-	Name        string        `yaml:"name"`
-	IPRegex     string        `yaml:"ip_regex"`
-	StartSteps  []CommandStep `yaml:"start_steps"`
-	StopSteps   []CommandStep `yaml:"stop_steps"`
-	HealthCheck struct {
-		Command    string `yaml:"command"`
-		NumRetries int    `yaml:"num_retries"`
-		Timeout    string `yaml:"timeout"`
-	} `yaml:"health_check"`
-}
-
-type Configuration struct {
-	PatchNotifyEnabled bool              `yaml:"patch_notifications_enabled"`
-	IpMappings         map[string]string `yaml:"application_ip_mappings"`
-	PatchNotifyFrom    string            `yaml:"patch_notify_from_email"`
-	PatchNotifyTo      string            `yaml:"patch_notify_to_emails"`
-	Applications       []Application     `yaml:"applications"`
 }
 
 func usage(exitCode int) {
@@ -54,6 +36,13 @@ func usage(exitCode int) {
 
 func main() {
 
+	log.SetOutput(os.Stdout)
+
+	if len(os.Args) == 2 {
+		util.BuildProcessContext(os.Args[1])
+		os.Exit(0)
+	}
+
 	// deserialize into Configuration struct from a local config.yaml file
 	configFile, err := os.Open("config.yaml")
 	if err != nil {
@@ -61,7 +50,7 @@ func main() {
 	}
 	defer configFile.Close()
 
-	var config Configuration
+	var config AutomationConfiguration
 	decoder := yaml.NewDecoder(configFile)
 	err = decoder.Decode(&config)
 	if err != nil {
@@ -87,15 +76,13 @@ func main() {
 		log.Fatal("Unable to parse arg for <port> as int")
 	}
 
-	options := Options{
+	options := CLIOptions{
 		Command:  os.Args[1],
 		IP:       os.Args[2],
 		Port:     port,
 		Username: os.Args[4],
 		Password: os.Args[5],
 	}
-
-	options.ServerType = util.DetermineServerType(options.IP, config.IpMappings)
 
 	switch options.Command {
 	case "start":
@@ -154,16 +141,6 @@ func main() {
 			} else {
 				log.Printf("Nothing to Stop on Node: %s\n", options.IP)
 			}
-
-			// write function here to send snapshot email
-			// subject := "Snapshot: [ " + ip + " ]"
-			// err = util.SendSnapshotEmail(config.PatchNotifyFrom, config.PatchNotifyTo, subject, apacheProcessNames)
-			// if err != nil {
-			// 	log.Fatalf("Error:", err)
-			// 	return
-			// } else {
-			// 	log.Println("Email sent successfully!")
-			// }
 
 		}
 

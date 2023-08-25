@@ -1,10 +1,5 @@
 patch_notifications_enabled: false
 
-application_ip_mappings:
-  web: "^((XX\.XX\.XX\.)|(XX\.XX\.XX\.))\d{1,3}$" # change me
-  backend: "^((XX\.XX\.XX\.)|(XX\.XX\.XX\.))\d{1,3}$" # change me
-  apache: "^((XX\.XX\.XX\.)|(XX\.XX\.XX\.))\d{1,3}$" # change me 
-
 patch_notify_from_email: "xxxx@example.com"
 
 patch_notify_to_emails:
