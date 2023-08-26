@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bufio"
+	"fmt"
 	"log"
 	"os"
-	"strconv"
+	"strings"
 
 	"github.com/hamzaanjum9696/server-patching/internal/prepare"
 	"github.com/hamzaanjum9696/server-patching/internal/start"
@@ -11,7 +13,7 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-const RequiredArgs int = 6
+const RequiredArgs int = 2
 
 type AutomationConfiguration struct {
 	PatchNotifyEnabled bool               `yaml:"patch_notifications_enabled"`
@@ -30,23 +32,23 @@ type CLIOptions struct {
 }
 
 func usage(exitCode int) {
-	log.Println("Usage: ./server-patcher <command> <ip> <port> <username> <pass>")
+	log.Println("Usage: ./server-patcher <command>")
 	os.Exit(exitCode)
 }
 
-func main() {
+func printProcessContext(pc util.ProcessContext) {
+	log.Printf("Process Context:\n")
+	log.Printf("  PID: %d\n", pc.PID)
+	log.Printf("  User is: %s\n", pc.ProcessOwner)
+	log.Printf("  Process Name: %s\n", pc.ProcessName)
+	log.Printf("  Process Path: %s\n", pc.ProcessPath)
+	log.Printf("  Launch Path: %s\n", pc.LaunchPath)
+}
 
-	log.SetOutput(os.Stdout)
-
-	if len(os.Args) == 2 {
-		util.BuildProcessContext(os.Args[1])
-		os.Exit(0)
-	}
-
-	// deserialize into Configuration struct from a local config.yaml file
-	configFile, err := os.Open("config.yaml")
+func loadConfig(filePath string) (*AutomationConfiguration, error) {
+	configFile, err := os.Open(filePath)
 	if err != nil {
-		log.Fatal("Error opening config file:", err)
+		return nil, err
 	}
 	defer configFile.Close()
 
@@ -54,10 +56,65 @@ func main() {
 	decoder := yaml.NewDecoder(configFile)
 	err = decoder.Decode(&config)
 	if err != nil {
-		log.Fatal("Error decoding config file:", err)
+		return nil, err
 	}
 
-	log.Printf("Running with configuration: %#v\n", config)
+	return &config, nil
+}
+
+func main() {
+
+	log.SetOutput(os.Stdout)
+
+	if len(os.Args) != RequiredArgs {
+		usage(1)
+	}
+
+	if os.Args[1] == "help" {
+		usage(0)
+	}
+
+	configFilePath := "config.yaml"
+	config, err := loadConfig(configFilePath)
+	if err != nil {
+		log.Fatal("Error loading config file:", err)
+	}
+
+	// give process contexts to user
+
+	options := CLIOptions{
+		Command: os.Args[1],
+	}
+
+	switch options.Command {
+	case "start":
+		log.Fatal("Not Implemented Yet")
+	case "stop":
+
+		for _, app := range config.Applications {
+			processContexts := util.BuildProcessContext(app.ProcessFilter)
+			for _, pc := range processContexts {
+				printProcessContext(pc)
+			}
+		}
+
+		fmt.Println("Do you want to stop these processes? (yes/no)")
+		scanner := bufio.NewScanner(os.Stdin)
+		scanner.Scan()
+		userInput := strings.TrimSpace(scanner.Text())
+
+		if userInput == "yes" {
+			//executeStopSteps()
+			log.Println("Stopping Services Now")
+			for _, step := range config.Applications {
+				fmt.Println("Executing step:", step)
+				// Implement your logic for each step here
+			}
+		}
+	}
+	os.Exit(0)
+
+	//log.Printf("Running with configuration: %#v\n", config)
 
 	if len(os.Args) < RequiredArgs {
 		usage(1)
@@ -71,18 +128,18 @@ func main() {
 		log.Fatal("Provided Argument for IP Address is not Valid")
 	}
 
-	port, err := strconv.Atoi(os.Args[3])
-	if err != nil {
-		log.Fatal("Unable to parse arg for <port> as int")
-	}
+	// port, err := strconv.Atoi(os.Args[3])
+	// if err != nil {
+	// 	log.Fatal("Unable to parse arg for <port> as int")
+	// }
 
-	options := CLIOptions{
-		Command:  os.Args[1],
-		IP:       os.Args[2],
-		Port:     port,
-		Username: os.Args[4],
-		Password: os.Args[5],
-	}
+	// options := CLIOptions{
+	// 	Command:  os.Args[1],
+	// 	IP:       os.Args[2],
+	// 	Port:     port,
+	// 	Username: os.Args[4],
+	// 	Password: os.Args[5],
+	// }
 
 	switch options.Command {
 	case "start":

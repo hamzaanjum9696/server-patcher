@@ -6,6 +6,7 @@ import (
 	"log"
 	"net"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -16,10 +17,11 @@ import (
 type ServerType int
 
 type ProcessContext struct {
-	PID         int
-	ProcessName string
-	ProcessPath string
-	LaunchPath  string
+	PID          int32
+	ProcessName  string
+	ProcessPath  string
+	LaunchPath   string
+	ProcessOwner string
 }
 
 type CommandStep struct {
@@ -55,7 +57,7 @@ const (
 	Unknown ServerType = 3
 )
 
-func BuildProcessContext(processFilter string) *ProcessContext {
+func BuildProcessContext(processFilter string) []ProcessContext {
 	// using the process filter, extract process name, process id, launch path, process path
 	// and return a ProcessContext struct
 	// example: processFilter = "httpd"
@@ -66,29 +68,70 @@ func BuildProcessContext(processFilter string) *ProcessContext {
 	// 	  ProcessPath: "/usr/sbin/httpd",
 	// 	  LaunchPath: "/u/apps/apache/bin"
 	// }
+	// Create an array to store ProcessContext objects
+	allProcessContexts := make([]ProcessContext, 0)
 
-	matches := findProcesses(processFilter)
-	log.Printf("Processes: %s\n", matches)
-	return nil
+	processIDs := findProcessIDs(processFilter)
+	for _, pid := range processIDs {
+		processName, _ := pid.Name()
+		processPath, _ := pid.Exe()
+		cmdLine, _ := pid.CmdlineSlice()
+		processLaunchPath := strings.Join(cmdLine, " ")
+		processUser, _ := pid.Username()
+
+		// Create a new ProcessContext object and populate its values
+		processContext := ProcessContext{
+			PID:          pid.Pid,
+			ProcessName:  processName,
+			ProcessPath:  processPath,
+			LaunchPath:   processLaunchPath,
+			ProcessOwner: processUser,
+		}
+		// Append the ProcessContext object to the array
+		processDir, _ := filepath.Abs(filepath.Dir(processPath))
+		log.Printf("Process Path is: %s\n", processDir)
+		processCWD, _ := pid.Cwd()
+		log.Printf("Process CWD is: %s\n", processCWD)
+		//processWDusingOS, _ := os.Getwd(pid.Pid)
+		allProcessContexts = append(allProcessContexts, processContext)
+	}
+	//log.Println("Processes: \n", allProcessContexts)
+	return allProcessContexts
 
 }
 
-func findProcesses(processFilter string) []*process.Process {
-	processes, err := process.Pids()
+func findProcessIDs(processFilter string) []*process.Process {
+	processIDs, err := process.Pids()
 	matches := make([]*process.Process, 0)
 
 	if err != nil {
 		log.Fatalf("Error getting process ids: %s\n", err)
 	}
 
-	log.Printf("Found %d processes\n", len(processes))
+	//log.Printf("Found %d processes\n", len(processIDs))
 
-	for _, pid := range processes {
+	for _, pid := range processIDs {
 		p, err := process.NewProcess(pid)
 		if err != nil {
 			continue
 		}
-		if pname, err := p.Name(); err == nil && strings.Contains(pname, processFilter) {
+
+		pname, err := p.Name()
+		if err != nil {
+			continue
+		}
+
+		processPath, err := p.Exe()
+		if err != nil {
+			continue
+		}
+
+		procesCWD, err := p.Cwd()
+		if err != nil {
+			continue
+		}
+
+		if strings.Contains(pname, processFilter) || strings.Contains(processPath, processFilter) || strings.Contains(procesCWD, processFilter) {
 			log.Printf("Found matching process %s with PID: %d\n", pname, pid)
 			matches = append(matches, p)
 		}
