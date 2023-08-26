@@ -1,11 +1,10 @@
 all: server
 
+# set environment variables from .env file
+include .env
+
 BINARY_NAME=server-patcher
-REMOTE_USER=root
-REMOTE_HOST=139.59.44.246
-DESTINATION_PATH=/root/server-patcher
-PRIVATE_KEY="C:\Users\sam9696\.ssh\do.ppk"
-PASSWORD="Energize-Hypnotize8-Legislate"
+
 
 local:
 	@echo "Building $(BINARY_NAME)..."
@@ -14,7 +13,11 @@ local:
 
 server:
 	@echo "Building $(BINARY_NAME)..."
-	@go build -o $(BINARY_NAME) cmd/server-patcher/main.go
-	@echo "Done. Binary is located at $(BINARY_NAME)"
-	@pscp -pw $(PASSWORD) $(BINARY_NAME) $(REMOTE_USER)@$(REMOTE_HOST):$(DESTINATION_PATH)
-	@echo "Shipped binary to server at /root/server-patcher"
+	@GOOS=linux GOARCH=amd64 go build -o $(BINARY_NAME) cmd/server-patcher/main.go
+	@echo "Done building. Binary is located at $(BINARY_NAME)"
+	@SCP_COMMAND="sshpass -p $(SERVER_CREDS_PASSWORD) scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null $(BINARY_NAME) $(SERVER_CREDS_USER)@$(SERVER_IP):/$(SERVER_CREDS_USER)/$(BINARY_NAME)"
+	@if [ "$(OS)" = "Windows_NT" ]; then \
+		SCP_COMMAND="pscp -pw $(SERVER_CREDS_PASSWORD) $(BINARY_NAME) $(SERVER_CREDS_USER)@$(SERVER_IP):/$(SERVER_CREDS_USER)/$(BINARY_NAME)"; \
+	fi
+	@$(SCP_COMMAND)
+	@echo "Done uploading. Binary is located at $(SERVER_IP):/$(SERVER_CREDS_USER)/$(BINARY_NAME)"
