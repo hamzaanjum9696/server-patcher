@@ -92,7 +92,8 @@ func main() {
 	case "stop":
 
 		for _, app := range config.Applications {
-			processContexts := util.BuildProcessContext(app.ProcessFilter)
+			fmt.Println("Application:", app.Name)
+			processContexts := util.BuildProcessContexts(app.ProcessFilter, app.LaunchPathCommand)
 			for _, pc := range processContexts {
 				printProcessContext(pc)
 			}
