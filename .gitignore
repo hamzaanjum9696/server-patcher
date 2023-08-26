@@ -1,3 +1,4 @@
 config.yaml
 server-patcher
+server-patcher_local
 .env
