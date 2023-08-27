@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+	"text/template"
 
 	"github.com/shirou/gopsutil/v3/process"
 	"golang.org/x/crypto/ssh"
@@ -16,10 +17,11 @@ import (
 type ServerType int
 
 type ProcessContext struct {
-	PID         int
-	ProcessName string
-	ProcessPath string
-	LaunchPath  string
+	PID          int32
+	ProcessName  string
+	ProcessPath  string
+	LaunchPath   string
+	ProcessOwner string
 }
 
 type CommandStep struct {
@@ -27,19 +29,12 @@ type CommandStep struct {
 }
 
 type Application struct {
-	Name          string        `yaml:"name"`
-	ProcessFilter string        `yaml:"process_filter"`
-	IPRegex       string        `yaml:"ip_regex"`
-	StartSteps    []CommandStep `yaml:"start_steps"`
-	StopSteps     []CommandStep `yaml:"stop_steps"`
-
-	// this one doesn't have a yaml key because its not from yaml,
-	// we are building it ourselves using process_filter from yaml
-	// still need to solve the uniqueness warning problem
-	// for now, we can just add a `are you sure? (y/n)` check and list
-	// all the processes. Then, user can read and confirm that they
-	// are starting/stopping the processes that they wanted to.
-	ProcessContext ProcessContext
+	Name              string        `yaml:"name"`
+	ProcessFilter     string        `yaml:"process_filter"`
+	IPRegex           string        `yaml:"ip_regex"`
+	LaunchPathCommand string        `yaml:"launch_path_command"`
+	StartSteps        []CommandStep `yaml:"start_steps"`
+	StopSteps         []CommandStep `yaml:"stop_steps"`
 
 	HealthCheck struct {
 		Command    string `yaml:"command"`
@@ -55,45 +50,129 @@ const (
 	Unknown ServerType = 3
 )
 
-func BuildProcessContext(processFilter string) *ProcessContext {
+func getLaunchPath(processFilter string, pid int32, launchPathCommand string) string {
+	var launchPath string
+	if launchPathCommand != "" {
+		tmpl, err := template.New("launch_path_command").Parse(launchPathCommand)
+		if err != nil {
+			log.Fatalf("Error parsing launch path command: %s\n", err)
+		}
+
+		var tpl bytes.Buffer
+		err = tmpl.Execute(&tpl, struct {
+			ProcessFilter string
+			Pid           int32
+		}{
+			ProcessFilter: processFilter,
+			Pid:           pid,
+		})
+		if err != nil {
+			log.Fatalf("Error executing launch path command: %s\n", err)
+		}
+
+		launchPathCommand = tpl.String()
+
+		var stdout, stderr bytes.Buffer
+
+		cmd := exec.Command("bash", "-c", launchPathCommand)
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+
+		err = cmd.Run()
+		if err != nil {
+			log.Fatalf("Error executing launch path command: %s\n", err)
+		}
+		if stderr.String() != "" {
+			log.Fatalf("Error executing launch path command: %s\n", stderr.String())
+		}
+		launchPath = strings.TrimSpace(stdout.String())
+	}
+
+	return launchPath
+}
+
+func BuildProcessContexts(processFilter string, launchPathCommand string) []ProcessContext {
+
 	// using the process filter, extract process name, process id, launch path, process path
 	// and return a ProcessContext struct
-	// example: processFilter = "httpd"
-	// output:
-	// ProcessContext{
-	// 	  PID: 1234,
-	// 	  ProcessName: "httpd",
-	// 	  ProcessPath: "/usr/sbin/httpd",
-	// 	  LaunchPath: "/u/apps/apache/bin"
-	// }
+	// Create an array to store ProcessContext objects
+	processContexts := make([]ProcessContext, 0)
 
-	matches := findProcesses(processFilter)
-	log.Printf("Processes: %s\n", matches)
-	return nil
+	processes := findProcesses(processFilter)
+	for _, p := range processes {
+		if ppid, err := p.Ppid(); err == nil && ppid != 1 {
+			continue
+		}
+		processName, _ := p.Name()
+		processPath, _ := p.Exe()
+		var processLaunchPath string
+		if launchPathCommand == "" {
+			fmt.Printf("SHOULD NOT BE HERE: %d\n", p.Pid)
+			cmdLine, _ := p.CmdlineSlice()
+			processLaunchPath = strings.Join(cmdLine, " ")
+		} else {
+			processLaunchPath = getLaunchPath(processFilter, p.Pid, launchPathCommand)
+		}
+		processUser, _ := p.Username()
+
+		// Create a new ProcessContext object and populate its values
+		processContext := ProcessContext{
+			PID:          p.Pid,
+			ProcessName:  processName,
+			ProcessPath:  processPath,
+			LaunchPath:   processLaunchPath,
+			ProcessOwner: processUser,
+		}
+		// Append the ProcessContext object to the array
+		processContexts = append(processContexts, processContext)
+	}
+	return processContexts
 
 }
 
 func findProcesses(processFilter string) []*process.Process {
-	processes, err := process.Pids()
+	processIDs, err := process.Pids()
 	matches := make([]*process.Process, 0)
 
 	if err != nil {
 		log.Fatalf("Error getting process ids: %s\n", err)
 	}
 
-	log.Printf("Found %d processes\n", len(processes))
-
-	for _, pid := range processes {
+	for _, pid := range processIDs {
 		p, err := process.NewProcess(pid)
 		if err != nil {
 			continue
 		}
-		if pname, err := p.Name(); err == nil && strings.Contains(pname, processFilter) {
-			log.Printf("Found matching process %s with PID: %d\n", pname, pid)
+
+		pname, err := p.Name()
+		if err != nil {
+			continue
+		}
+
+		processPath, err := p.Exe()
+		if err != nil {
+			continue
+		}
+
+		processCWD, err := p.Cwd()
+		if err != nil {
+			continue
+		}
+
+		processCmdLine, err := p.CmdlineSlice()
+		if err != nil {
+			continue
+		}
+
+		if strings.Contains(pname, processFilter) ||
+			strings.Contains(processPath, processFilter) ||
+			strings.Contains(processCWD, processFilter) ||
+			strings.Contains(strings.Join(processCmdLine, " "), processFilter) {
 			matches = append(matches, p)
 		}
 	}
 
+	log.Printf("Found processes matching filter %s: %#v\n", processFilter, matches)
 	return matches
 }
 
@@ -135,7 +214,8 @@ func SendSnapshotEmail(notifyFromEmail string, notifyToEmails []string, notifyCC
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("error sending email: %s\nOutput: %s", err, output)
+		log.Fatalf("error sending email: %s; output: %s", err, output)
+		return err
 	}
 
 	return nil

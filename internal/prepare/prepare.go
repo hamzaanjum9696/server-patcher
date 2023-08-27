@@ -9,7 +9,36 @@ import (
 )
 
 // normal parameters sequence
-// ip, port, username, password, ....
+// /usr/local/apache2/bin/apachectl start
+// /u/bin/tomcat-name-here/bin/startup.sh
+
+// "/u/Server_Patching_Automation/snapshot-2021-07-21-12-00-00.json"
+
+// SNAPSHOT FORMAT:
+// {
+// "shutdown_time": "2021-07-21 12:00:00",
+// "processes": [
+// 	{
+// 		"process_name": "httpd",
+// 		"process_path": "/usr/local/apache2/bin/httpd",
+// 		"launch_path": "/usr/local/apache2/bin/",
+// 		"process_owner": "root"
+// 	},
+// 	{
+// 		"process_name": "tomcat",
+// 		"process_path": "/u/bin/tomcat-name-here/bin/tomcat",
+// 		"launch_path": "/u/bin/tomcat-name-here/bin/",
+// 		"process_owner": "root"
+// 	},
+// 	{
+// 		"process_name": "tomcat",
+// 		"process_path": "/u/bin/tomcat-name-here/bin/tomcat",
+// 		"launch_path": "/u/bin/tomcat-name-here/bin/",
+// 		"process_owner": "app_user"
+// 	}
+// ]
+// }
+//
 
 func SaveSnapshotInDir(serverAddr string, port int, username string, password string, processNames []string) error {
 
