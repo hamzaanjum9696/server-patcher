@@ -7,8 +7,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/hamzaanjum9696/server-patching/internal/prepare"
-	"github.com/hamzaanjum9696/server-patching/internal/start"
 	"github.com/hamzaanjum9696/server-patching/internal/util"
 	"gopkg.in/yaml.v2"
 )
@@ -32,7 +30,7 @@ type CLIOptions struct {
 }
 
 func usage(exitCode int) {
-	log.Println("Usage: ./server-patcher <command>")
+	log.Println("Usage: ./server-patcher start/stop")
 	os.Exit(exitCode)
 }
 
@@ -80,8 +78,6 @@ func main() {
 		log.Fatal("Error loading config file:", err)
 	}
 
-	// give process contexts to user
-
 	options := CLIOptions{
 		Command: os.Args[1],
 	}
@@ -91,11 +87,13 @@ func main() {
 		log.Fatal("Not Implemented Yet")
 	case "stop":
 
+		AllProcessContexts := make([]util.ProcessContext, 0)
 		for _, app := range config.Applications {
 			fmt.Println("Application:", app.Name)
 			processContexts := util.BuildProcessContexts(app.ProcessFilter, app.LaunchPathCommand)
 			for _, pc := range processContexts {
-				printProcessContext(pc)
+				//printProcessContext(pc)
+				AllProcessContexts = append(AllProcessContexts, pc)
 			}
 		}
 
@@ -107,100 +105,23 @@ func main() {
 		if userInput == "yes" {
 			//executeStopSteps()
 			log.Println("Stopping Services Now")
+			// save snapshot now
+			err = util.SaveProcessContexts(AllProcessContexts)
+			if err != nil {
+				log.Fatalf("Error in Saving snapshot file: %s\n", err)
+			}
+			// stop services now
 			for _, step := range config.Applications {
-				fmt.Println("Executing step:", step)
+				fmt.Println("Executing Stop step:", step)
 				// Implement your logic for each step here
 			}
+		} else {
+			log.Println("Stopping Execution Now!!!")
 		}
+	default:
+		usage(1)
+		log.Println("Wrong Input!!!")
 	}
 	os.Exit(0)
 
-	//log.Printf("Running with configuration: %#v\n", config)
-
-	if len(os.Args) < RequiredArgs {
-		usage(1)
-	}
-
-	if os.Args[1] == "help" {
-		usage(0)
-	}
-
-	if !util.IsValidIP(os.Args[2]) {
-		log.Fatal("Provided Argument for IP Address is not Valid")
-	}
-
-	// port, err := strconv.Atoi(os.Args[3])
-	// if err != nil {
-	// 	log.Fatal("Unable to parse arg for <port> as int")
-	// }
-
-	// options := CLIOptions{
-	// 	Command:  os.Args[1],
-	// 	IP:       os.Args[2],
-	// 	Port:     port,
-	// 	Username: os.Args[4],
-	// 	Password: os.Args[5],
-	// }
-
-	switch options.Command {
-	case "start":
-		switch options.ServerType {
-		case util.WebApp:
-			panic("unimplemented")
-		case util.Backend:
-			panic("unimplemented")
-		case util.Apache, util.Unknown:
-			apacheProcessNames, err := start.ReadSnapshotFromDir(options.IP, options.Port, options.Username, options.Password)
-			if err != nil {
-				log.Fatal(err)
-			}
-
-			status := start.StartApacheProcesses(options.Password, options.Port, options.Username, options.Password, apacheProcessNames)
-			log.Printf("Status is: %t\n", status)
-
-			validationStatus := start.ValidateSnapshot(options.IP, options.Port, options.Username, options.Password, apacheProcessNames)
-			if validationStatus {
-				log.Println("All Server Present in Snapshot Started Successfully!!!")
-			} else {
-				log.Println("ALERT!!!All Server Present in Snapshot are not Started!!!ALERT")
-			}
-		}
-	case "stop":
-		switch options.ServerType {
-		case util.WebApp:
-			panic("unimplemented")
-		case util.Backend:
-			panic("unimplemented")
-		case util.Apache, util.Unknown:
-			apacheProcessNames, err := prepare.GetApacheProcessNames(options.IP, options.Port, options.Username, options.Password)
-			if err != nil {
-				log.Fatal(err)
-			}
-
-			numberOfApachesRunning := len(apacheProcessNames)
-			log.Printf("Number of Apaches Running: %d\n", numberOfApachesRunning)
-			for i, apache := range apacheProcessNames {
-				log.Printf("Apache %d: %s\n", i+1, apache)
-			}
-
-			err = prepare.SaveSnapshotInDir(options.IP, options.Port, options.Username, options.Password, apacheProcessNames)
-			if err != nil {
-				log.Fatal(err)
-			}
-
-			if len(apacheProcessNames) > 0 {
-				log.Printf("Stopping Apache Servers for Node: %s\n", options.IP)
-				status := prepare.StopApacheProcesses(options.IP, options.Port, options.Username, options.Password, apacheProcessNames)
-				if !status {
-					log.Fatal("Apache Servers Could Not be Stopped Properly.")
-				} else {
-					log.Printf("Apache Servers Stopped on Node: %s\n", options.IP)
-				}
-			} else {
-				log.Printf("Nothing to Stop on Node: %s\n", options.IP)
-			}
-
-		}
-
-	}
 }
