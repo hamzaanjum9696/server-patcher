@@ -2,10 +2,13 @@ package util
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"text/template"
@@ -42,13 +45,6 @@ type Application struct {
 		Timeout    string `yaml:"timeout"`
 	} `yaml:"health_check"`
 }
-
-const (
-	WebApp  ServerType = 0
-	Backend ServerType = 1
-	Apache  ServerType = 2
-	Unknown ServerType = 3
-)
 
 func getLaunchPath(processFilter string, pid int32, launchPathCommand string) string {
 	var launchPath string
@@ -93,9 +89,6 @@ func getLaunchPath(processFilter string, pid int32, launchPathCommand string) st
 
 func BuildProcessContexts(processFilter string, launchPathCommand string) []ProcessContext {
 
-	// using the process filter, extract process name, process id, launch path, process path
-	// and return a ProcessContext struct
-	// Create an array to store ProcessContext objects
 	processContexts := make([]ProcessContext, 0)
 
 	processes := findProcesses(processFilter)
@@ -107,7 +100,6 @@ func BuildProcessContexts(processFilter string, launchPathCommand string) []Proc
 		processPath, _ := p.Exe()
 		var processLaunchPath string
 		if launchPathCommand == "" {
-			fmt.Printf("SHOULD NOT BE HERE: %d\n", p.Pid)
 			cmdLine, _ := p.CmdlineSlice()
 			processLaunchPath = strings.Join(cmdLine, " ")
 		} else {
@@ -127,7 +119,37 @@ func BuildProcessContexts(processFilter string, launchPathCommand string) []Proc
 		processContexts = append(processContexts, processContext)
 	}
 	return processContexts
+}
 
+func SaveProcessContexts(processContexts []ProcessContext) error {
+
+	directoryPath := "/u/Server-Patcher-Automation/"
+	filename := "snapshot.txt"
+	filePath := filepath.Join(directoryPath, filename)
+
+	if err := os.MkdirAll(directoryPath, os.ModePerm); err != nil {
+		return err
+	}
+
+	// Open the file for writing
+	file, err := os.Create(filePath)
+	if err != nil {
+		return err
+	}
+
+	// Convert processContexts to JSON format
+	jsonData, err := json.MarshalIndent(processContexts, "", "    ")
+	if err != nil {
+		return err
+	}
+
+	// Write JSON data to the file
+	_, err = file.Write(jsonData)
+	if err != nil {
+		return err
+	}
+	log.Printf("Snapshot Saved at path: %s\n", filePath)
+	return nil
 }
 
 func findProcesses(processFilter string) []*process.Process {
@@ -283,22 +305,4 @@ func IsValidIP(provided_ip string) bool {
 func matchIPPattern(ip string, pattern string) bool {
 	regex := regexp.MustCompile(pattern)
 	return regex.MatchString(ip)
-}
-
-func DetermineServerType(ip_address string, ipMappings map[string]string) ServerType {
-
-	// define all possible patterns here
-	ipPatternWEBServers := ipMappings["WebApp"]
-	ipPatternBEServers := ipMappings["Backend"]
-	ipPatternApacheServers := ipMappings["Apache"]
-
-	if matchIPPattern(ip_address, ipPatternWEBServers) {
-		return WebApp
-	} else if matchIPPattern(ip_address, ipPatternBEServers) {
-		return Backend
-	} else if matchIPPattern(ip_address, ipPatternApacheServers) {
-		return Apache
-	} else {
-		return Unknown
-	}
 }
