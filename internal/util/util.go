@@ -12,12 +12,21 @@ import (
 	"regexp"
 	"strings"
 	"text/template"
+	"time"
 
 	"github.com/shirou/gopsutil/v3/process"
 	"golang.org/x/crypto/ssh"
+	"gopkg.in/yaml.v2"
 )
 
 type ServerType int
+
+type AutomationConfiguration struct {
+	PatchNotifyEnabled bool          `yaml:"patch_notifications_enabled"`
+	PatchNotifyFrom    string        `yaml:"patch_notify_from_email"`
+	PatchNotifyTo      string        `yaml:"patch_notify_to_emails"`
+	Applications       []Application `yaml:"applications"`
+}
 
 type ProcessContext struct {
 	PID          int32
@@ -87,44 +96,65 @@ func getLaunchPath(processFilter string, pid int32, launchPathCommand string) st
 	return launchPath
 }
 
-func BuildProcessContexts(processFilter string, launchPathCommand string) []ProcessContext {
+func BuildProcessContexts(config *AutomationConfiguration) []ProcessContext {
 
-	processContexts := make([]ProcessContext, 0)
+	AllProcessContexts := make([]ProcessContext, 0)
 
-	processes := findProcesses(processFilter)
-	for _, p := range processes {
-		if ppid, err := p.Ppid(); err == nil && ppid != 1 {
-			continue
-		}
-		processName, _ := p.Name()
-		processPath, _ := p.Exe()
-		var processLaunchPath string
-		if launchPathCommand == "" {
-			cmdLine, _ := p.CmdlineSlice()
-			processLaunchPath = strings.Join(cmdLine, " ")
-		} else {
-			processLaunchPath = getLaunchPath(processFilter, p.Pid, launchPathCommand)
-		}
-		processUser, _ := p.Username()
+	for _, app := range config.Applications {
+		processes := findProcesses(app.ProcessFilter)
+		for _, p := range processes {
+			if ppid, err := p.Ppid(); err == nil && ppid != 1 {
+				continue
+			}
+			processName, _ := p.Name()
+			processPath, _ := p.Exe()
+			var processLaunchPath string
+			if app.LaunchPathCommand == "" {
+				cmdLine, _ := p.CmdlineSlice()
+				processLaunchPath = strings.Join(cmdLine, " ")
+			} else {
+				processLaunchPath = getLaunchPath(app.ProcessFilter, p.Pid, app.LaunchPathCommand)
+			}
+			processUser, _ := p.Username()
 
-		// Create a new ProcessContext object and populate its values
-		processContext := ProcessContext{
-			PID:          p.Pid,
-			ProcessName:  processName,
-			ProcessPath:  processPath,
-			LaunchPath:   processLaunchPath,
-			ProcessOwner: processUser,
+			// Create a new ProcessContext object and populate its values
+			processContext := ProcessContext{
+				PID:          p.Pid,
+				ProcessName:  processName,
+				ProcessPath:  processPath,
+				LaunchPath:   processLaunchPath,
+				ProcessOwner: processUser,
+			}
+			// Append the ProcessContext object to the array
+			AllProcessContexts = append(AllProcessContexts, processContext)
 		}
-		// Append the ProcessContext object to the array
-		processContexts = append(processContexts, processContext)
 	}
-	return processContexts
+	return AllProcessContexts
+}
+
+func LoadConfig(filePath string) (*AutomationConfiguration, error) {
+	configFile, err := os.Open(filePath)
+	if err != nil {
+		return nil, err
+	}
+	defer configFile.Close()
+
+	var config AutomationConfiguration
+	decoder := yaml.NewDecoder(configFile)
+	err = decoder.Decode(&config)
+	if err != nil {
+		return nil, err
+	}
+
+	return &config, nil
 }
 
 func SaveProcessContexts(processContexts []ProcessContext) error {
 
 	directoryPath := "/u/Server-Patcher-Automation/"
-	filename := "snapshot.txt"
+	currentTime := time.Now()
+	dateTimeString := currentTime.Format("02012006_150405")
+	filename := dateTimeString + "-snapshot.json"
 	filePath := filepath.Join(directoryPath, filename)
 
 	if err := os.MkdirAll(directoryPath, os.ModePerm); err != nil {
@@ -194,7 +224,7 @@ func findProcesses(processFilter string) []*process.Process {
 		}
 	}
 
-	log.Printf("Found processes matching filter %s: %#v\n", processFilter, matches)
+	//log.Printf("Found processes matching filter %s: %v\n", processFilter, matches)
 	return matches
 }
 

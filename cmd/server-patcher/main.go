@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/hamzaanjum9696/server-patching/internal/util"
-	"gopkg.in/yaml.v2"
 )
 
 const RequiredArgs int = 2
@@ -35,31 +34,46 @@ func usage(exitCode int) {
 }
 
 func printProcessContext(pc util.ProcessContext) {
-	log.Printf("Process Context:\n")
-	log.Printf("  PID: %d\n", pc.PID)
-	log.Printf("  User is: %s\n", pc.ProcessOwner)
-	log.Printf("  Process Name: %s\n", pc.ProcessName)
-	log.Printf("  Process Path: %s\n", pc.ProcessPath)
-	log.Printf("  Launch Path: %s\n", pc.LaunchPath)
+	fmt.Printf("Process Context:\n")
+	fmt.Printf("  PID: %d\n", pc.PID)
+	fmt.Printf("  User is: %s\n", pc.ProcessOwner)
+	fmt.Printf("  Process Name: %s\n", pc.ProcessName)
+	fmt.Printf("  Process Path: %s\n", pc.ProcessPath)
+	fmt.Printf("  Launch Path: %s\n", pc.LaunchPath)
 }
 
-func loadConfig(filePath string) (*AutomationConfiguration, error) {
-	configFile, err := os.Open(filePath)
-	if err != nil {
-		return nil, err
-	}
-	defer configFile.Close()
+func PromtUserForKillingConfirmation(allpc []util.ProcessContext) string {
 
-	var config AutomationConfiguration
-	decoder := yaml.NewDecoder(configFile)
-	err = decoder.Decode(&config)
-	if err != nil {
-		return nil, err
+	fmt.Println("Processes Running...")
+	for _, pc := range allpc {
+		printProcessContext(pc)
 	}
 
-	return &config, nil
+	fmt.Println("Do you want to stop these processes? (yes/no)")
+	scanner := bufio.NewScanner(os.Stdin)
+	scanner.Scan()
+	userInput := strings.TrimSpace(scanner.Text())
+
+	if userInput == "yes" {
+		return "yes"
+	} else {
+		return "no"
+	}
 }
 
+func StopServicesNow(AllProcessContexts []util.ProcessContext, config *util.AutomationConfiguration) {
+	// save snapshot now
+	err := util.SaveProcessContexts(AllProcessContexts)
+	if err != nil {
+		log.Fatalf("Error in Saving snapshot file: %s\n", err)
+	}
+	log.Println("Stopping Services Now")
+	// stop services now
+	for _, step := range config.Applications {
+		fmt.Println("Executing Stop step:", step)
+		// Implement your logic for each step here
+	}
+}
 func main() {
 
 	log.SetOutput(os.Stdout)
@@ -73,9 +87,9 @@ func main() {
 	}
 
 	configFilePath := "config.yaml"
-	config, err := loadConfig(configFilePath)
+	config, err := util.LoadConfig(configFilePath)
 	if err != nil {
-		log.Fatal("Error loading config file:", err)
+		log.Fatal("Error loading configurations:", err)
 	}
 
 	options := CLIOptions{
@@ -87,36 +101,19 @@ func main() {
 		log.Fatal("Not Implemented Yet")
 	case "stop":
 
-		AllProcessContexts := make([]util.ProcessContext, 0)
-		for _, app := range config.Applications {
-			fmt.Println("Application:", app.Name)
-			processContexts := util.BuildProcessContexts(app.ProcessFilter, app.LaunchPathCommand)
-			for _, pc := range processContexts {
-				//printProcessContext(pc)
-				AllProcessContexts = append(AllProcessContexts, pc)
-			}
+		AllProcessContexts := util.BuildProcessContexts(config)
+		var userConfirmation string
+		if len(AllProcessContexts) > 0 {
+			userConfirmation = PromtUserForKillingConfirmation(AllProcessContexts)
+		} else {
+			log.Println("No Process To Delete")
+			return
 		}
 
-		fmt.Println("Do you want to stop these processes? (yes/no)")
-		scanner := bufio.NewScanner(os.Stdin)
-		scanner.Scan()
-		userInput := strings.TrimSpace(scanner.Text())
-
-		if userInput == "yes" {
-			//executeStopSteps()
-			log.Println("Stopping Services Now")
-			// save snapshot now
-			err = util.SaveProcessContexts(AllProcessContexts)
-			if err != nil {
-				log.Fatalf("Error in Saving snapshot file: %s\n", err)
-			}
-			// stop services now
-			for _, step := range config.Applications {
-				fmt.Println("Executing Stop step:", step)
-				// Implement your logic for each step here
-			}
+		if userConfirmation == "yes" {
+			StopServicesNow(AllProcessContexts, config)
 		} else {
-			log.Println("Stopping Execution Now!!!")
+			log.Println("Terminating Process as per user request!!!")
 		}
 	default:
 		usage(1)
